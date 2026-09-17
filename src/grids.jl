@@ -71,14 +71,29 @@ struct DyadicGrid{N,T<:AbstractFloat,C,F,A} <: AbstractGrid{N,T}
 
     # The only way to build a grid: centres and faces are always derived, so an inconsistent
     # grid cannot exist.
-    function DyadicGrid(dims::NTuple{N,Int}, spacing::T, origin::NTuple{N,T}, area,
-                        atol::T) where {N,T<:AbstractFloat}
-        all(≥(1), dims) || throw(ArgumentError("DyadicGrid: every size must be at least 1, got $dims."))
-        spacing > 0 || throw(ArgumentError("DyadicGrid: spacing must be positive, got $spacing."))
-        centers = ntuple(d -> range(origin[d] + spacing / 2; step = spacing, length = dims[d]), N)
+    function DyadicGrid(
+        dims::NTuple{N,Int},
+        spacing::T,
+        origin::NTuple{N,T},
+        area,
+        atol::T,
+    ) where {N,T<:AbstractFloat}
+        all(≥(1), dims) ||
+            throw(ArgumentError("DyadicGrid: every size must be at least 1, got $dims."))
+        spacing > 0 ||
+            throw(ArgumentError("DyadicGrid: spacing must be positive, got $spacing."))
+        centers =
+            ntuple(d -> range(origin[d] + spacing / 2; step = spacing, length = dims[d]), N)
         faces = ntuple(d -> range(origin[d]; step = spacing, length = dims[d] + 1), N)
         return new{N,T,typeof(centers),typeof(faces),typeof(area)}(
-            dims, spacing, origin, centers, faces, area, atol)
+            dims,
+            spacing,
+            origin,
+            centers,
+            faces,
+            area,
+            atol,
+        )
     end
 end
 
@@ -109,12 +124,15 @@ function DyadicGrid(coords::AbstractVector...; area = nothing)
 
     # Coordinates are few; validate them on the host whatever device they live on.
     host = ntuple(d -> Float64.(Array(coords[d])), N)
-    for d in 1:N
-        length(host[d]) ≥ 2 || throw(ArgumentError(
-            "DyadicGrid: axis $d has $(length(host[d])) point(s); at least 2 are needed " *
-            "to determine the spacing."))
-        all(isfinite, host[d]) || throw(ArgumentError(
-            "DyadicGrid: axis $d contains non-finite coordinates."))
+    for d = 1:N
+        length(host[d]) ≥ 2 || throw(
+            ArgumentError(
+                "DyadicGrid: axis $d has $(length(host[d])) point(s); at least 2 are needed " *
+                "to determine the spacing.",
+            ),
+        )
+        all(isfinite, host[d]) ||
+            throw(ArgumentError("DyadicGrid: axis $d contains non-finite coordinates."))
     end
     maxabs = maximum(h -> maximum(abs, h), host)
     in_eps = maximum(d -> _coordinate_eps(eltype(coords[d])), 1:N)
@@ -122,33 +140,51 @@ function DyadicGrid(coords::AbstractVector...; area = nothing)
 
     # 1. Each axis on its own: increasing and uniform.
     axis_spacing = ntuple(d -> _fit_spacing(host[d]), N)
-    for d in 1:N
+    for d = 1:N
         h, s = host[d], axis_spacing[d]
-        s > 0 || throw(ArgumentError(
-            "DyadicGrid: axis $d is not increasing (fitted spacing $s). Reverse the axis — " *
-            "and the data along it — before building the grid."))
+        s > 0 || throw(
+            ArgumentError(
+                "DyadicGrid: axis $d is not increasing (fitted spacing $s). Reverse the axis — " *
+                "and the data along it — before building the grid.",
+            ),
+        )
         worst, iworst = _worst_residual(h, _mean_first_centre(h, s), s)
-        _same_coordinate(worst, 0.0, tolerance(s)) || throw(ArgumentError(
-            "DyadicGrid: axis $d is not uniformly spaced: point $iworst is $worst away " *
-            "from the best uniform fit with spacing $s (tolerance $(tolerance(s)))."))
+        _same_coordinate(worst, 0.0, tolerance(s)) || throw(
+            ArgumentError(
+                "DyadicGrid: axis $d is not uniformly spaced: point $iworst is $worst away " *
+                "from the best uniform fit with spacing $s (tolerance $(tolerance(s))).",
+            ),
+        )
     end
 
     # 2. All axes together: one shared spacing (isotropy).
     fitted_dx = _fit_common_spacing(host)
     atol = tolerance(fitted_dx)
-    fits(dx) = all(h -> _same_coordinate(first(_worst_residual(h, _mean_first_centre(h, dx), dx)),
-                                         0.0, atol), host)
-    fits(fitted_dx) || throw(ArgumentError(
-        "DyadicGrid: the axes have different spacings $axis_spacing; a dyadic grid is " *
-        "isotropic (dx == dy)."))
+    fits(dx) = all(
+        h -> _same_coordinate(
+            first(_worst_residual(h, _mean_first_centre(h, dx), dx)),
+            0.0,
+            atol,
+        ),
+        host,
+    )
+    fits(fitted_dx) || throw(
+        ArgumentError(
+            "DyadicGrid: the axes have different spacings $axis_spacing; a dyadic grid is " *
+            "isotropic (dx == dy).",
+        ),
+    )
 
     # 3. The simplest spacing and origin that still fit every point, so that e.g. Float32
     #    coordinates yield exactly the same grid as their Float64 counterparts.
     dx = _simplest(fitted_dx, atol, fits)
     origin = ntuple(N) do d
         h = host[d]
-        _simplest(_mean_first_centre(h, dx) - dx / 2, atol,
-                  o -> _same_coordinate(first(_worst_residual(h, o + dx / 2, dx)), 0.0, atol))
+        _simplest(
+            _mean_first_centre(h, dx) - dx / 2,
+            atol,
+            o -> _same_coordinate(first(_worst_residual(h, o + dx / 2, dx)), 0.0, atol),
+        )
     end
 
     dims = ntuple(d -> length(host[d]), N)
@@ -159,7 +195,7 @@ function _fit_spacing(h)
     n = length(h)
     ī = (n + 1) / 2
     h̄ = sum(h) / n
-    return sum((i - ī) * (h[i] - h̄) for i in 1:n) / sum((i - ī)^2 for i in 1:n)
+    return sum((i - ī) * (h[i] - h̄) for i = 1:n) / sum((i - ī)^2 for i = 1:n)
 end
 
 # Joint least-squares spacing over all axes.
@@ -170,8 +206,8 @@ function _fit_common_spacing(host)
         n = length(h)
         ī = (n + 1) / 2
         h̄ = sum(h) / n
-        num += sum((i - ī) * (h[i] - h̄) for i in 1:n)
-        den += sum((i - ī)^2 for i in 1:n)
+        num += sum((i - ī) * (h[i] - h̄) for i = 1:n)
+        den += sum((i - ī)^2 for i = 1:n)
     end
     return num / den
 end
@@ -186,7 +222,7 @@ _worst_residual(h, c, s) = findmax(i -> abs(h[i] - (c + (i - 1) * s)), eachindex
 # `x` rounded to the coarsest decimal unit for which `fits` still holds.
 function _simplest(x, atol, fits)
     kmax = floor(Int, log10(max(abs(x), atol))) + 1
-    for k in kmax:-1:-15
+    for k = kmax:-1:-15
         y = round(x; digits = -k)
         fits(y) && return y
     end
@@ -196,11 +232,15 @@ end
 _validate_area(::Nothing, dims, spacing) = nothing
 
 function _validate_area(area::AbstractArray, dims, spacing)
-    size(area) == dims || throw(ArgumentError(
-        "DyadicGrid: area has size $(size(area)) but the grid has $dims cells."))
+    size(area) == dims || throw(
+        ArgumentError(
+            "DyadicGrid: area has size $(size(area)) but the grid has $dims cells.",
+        ),
+    )
     stored = Float64.(area)
-    all(a -> isfinite(a) && a > 0, stored) || throw(ArgumentError(
-        "DyadicGrid: area must be finite and strictly positive everywhere."))
+    all(a -> isfinite(a) && a > 0, stored) || throw(
+        ArgumentError("DyadicGrid: area must be finite and strictly positive everywhere."),
+    )
     relative = sum(stored) / length(stored) / spacing^length(dims)
     if !(0.5 ≤ relative ≤ 2)
         @warn "DyadicGrid: the mean cell area is $(relative) × spacing^$(length(dims)). " *
@@ -255,8 +295,7 @@ _cellarea(area::AbstractArray, g::DyadicGrid, I...) = area[I...]
 
 function Base.show(io::IO, g::DyadicGrid)
     dims = length(g.size) == 1 ? "$(only(g.size))-cell" : join(g.size, "×")
-    print(io, dims, " DyadicGrid with spacing ", g.spacing,
-          " and origin ", g.origin)
+    print(io, dims, " DyadicGrid with spacing ", g.spacing, " and origin ", g.origin)
     g.area === nothing || print(io, ", with cell areas")
 end
 

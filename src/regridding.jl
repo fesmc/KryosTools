@@ -48,9 +48,12 @@ struct YFace <: AbstractLocation end
 struct Corner <: AbstractLocation end
 
 function _require_center(location::AbstractLocation, name)
-    location isa Center || throw(ArgumentError(
-        "$name: location $(nameof(typeof(location)))() is declared but not implemented " *
-        "yet; only Center() is supported."))
+    location isa Center || throw(
+        ArgumentError(
+            "$name: location $(nameof(typeof(location)))() is declared but not implemented " *
+            "yet; only Center() is supported.",
+        ),
+    )
     return location
 end
 
@@ -121,16 +124,20 @@ abstract type AbstractRefinement{N,L} <: AbstractRegridding{N,L} end
 Regridding between two geometrically identical grids: a plain `copyto!`. Throws unless the
 grids have the same size, spacing and origin; cell areas are ignored.
 """
-struct IdentityRegridding{N,L,G1<:DyadicGrid{N},G2<:DyadicGrid{N}} <: AbstractRegridding{N,L}
+struct IdentityRegridding{N,L,G1<:DyadicGrid{N},G2<:DyadicGrid{N}} <:
+       AbstractRegridding{N,L}
     grid1::G1
     grid2::G2
     location::L
 end
 
-function IdentityRegridding(grid1::DyadicGrid{N}, grid2::DyadicGrid{N};
-                            location::AbstractLocation = Center()) where {N}
-    _same_geometry(grid1, grid2) || throw(ArgumentError(
-        "IdentityRegridding: the grids differ ($grid1 vs $grid2)."))
+function IdentityRegridding(
+    grid1::DyadicGrid{N},
+    grid2::DyadicGrid{N};
+    location::AbstractLocation = Center(),
+) where {N}
+    _same_geometry(grid1, grid2) ||
+        throw(ArgumentError("IdentityRegridding: the grids differ ($grid1 vs $grid2)."))
     return IdentityRegridding(grid1, grid2, location)
 end
 
@@ -154,44 +161,66 @@ areas (`weights = grid1.area`, for area conservation on a distorted projection) 
 weight. Weights are stored as `Float64` on the device of the array passed in, and must live
 on the same backend as the fields. They are never applied implicitly.
 """
-struct AverageCoarsening{N,L,R,G1<:DyadicGrid{N},G2<:DyadicGrid{N},W,A} <: AbstractCoarsening{N,L}
+struct AverageCoarsening{N,L,R,G1<:DyadicGrid{N},G2<:DyadicGrid{N},W,A} <:
+       AbstractCoarsening{N,L}
     grid1::G1
     grid2::G2
     location::L
     weights::W
     inv_weightsum::A
 
-    function AverageCoarsening{N,L,R}(grid1::G1, grid2::G2, location::L, weights::W,
-                                      inv_weightsum::A) where {N,L,R,G1,G2,W,A}
+    function AverageCoarsening{N,L,R}(
+        grid1::G1,
+        grid2::G2,
+        location::L,
+        weights::W,
+        inv_weightsum::A,
+    ) where {N,L,R,G1,G2,W,A}
         return new{N,L,R,G1,G2,W,A}(grid1, grid2, location, weights, inv_weightsum)
     end
 end
 
-function AverageCoarsening(grid1::DyadicGrid{N}, grid2::DyadicGrid{N}; weights = nothing,
-                           location::AbstractLocation = Center()) where {N}
+function AverageCoarsening(
+    grid1::DyadicGrid{N},
+    grid2::DyadicGrid{N};
+    weights = nothing,
+    location::AbstractLocation = Center(),
+) where {N}
     name = "AverageCoarsening"
     _require_center(location, name)
     r = _nesting(grid1, grid2, name, "grid1", "ConstantRefinement or LinearRefinement")
     stored, inv_weightsum = _coarsening_weights(weights, grid1, grid2, Val(r))
-    return AverageCoarsening{N,typeof(location),r}(grid1, grid2, location, stored, inv_weightsum)
+    return AverageCoarsening{N,typeof(location),r}(
+        grid1,
+        grid2,
+        location,
+        stored,
+        inv_weightsum,
+    )
 end
 
 _coarsening_weights(::Nothing, grid1, grid2, ratio) = (nothing, nothing)
 
 function _coarsening_weights(weights::AbstractArray, grid1, grid2, ratio::Val{R}) where {R}
-    size(weights) == size(grid1) || throw(ArgumentError(
-        "AverageCoarsening: weights have size $(size(weights)), but the finer grid has " *
-        "$(join(size(grid1), "×")) cells."))
+    size(weights) == size(grid1) || throw(
+        ArgumentError(
+            "AverageCoarsening: weights have size $(size(weights)), but the finer grid has " *
+            "$(join(size(grid1), "×")) cells.",
+        ),
+    )
     stored = Float64.(weights)
-    all(w -> isfinite(w) && w >= 0, stored) || throw(ArgumentError(
-        "AverageCoarsening: weights must be finite and non-negative."))
+    all(w -> isfinite(w) && w >= 0, stored) ||
+        throw(ArgumentError("AverageCoarsening: weights must be finite and non-negative."))
     backend = get_backend(stored)
     sums = similar(stored, size(grid2))
     _block_sum_kernel!(backend)(sums, stored, ratio; ndrange = size(sums))
     synchronize(backend)
-    all(>(0), sums) || throw(ArgumentError(
-        "AverageCoarsening: at least one coarse cell has zero total weight, so its mean is " *
-        "undefined."))
+    all(>(0), sums) || throw(
+        ArgumentError(
+            "AverageCoarsening: at least one coarse cell has zero total weight, so its mean is " *
+            "undefined.",
+        ),
+    )
     sums .= inv.(sums)
     return stored, sums
 end
@@ -211,19 +240,26 @@ blocky.
 `grid2` must be finer than or equal to `grid1`, by a power-of-2 ratio, with coincident
 corners.
 """
-struct ConstantRefinement{N,L,R,G1<:DyadicGrid{N},G2<:DyadicGrid{N}} <: AbstractRefinement{N,L}
+struct ConstantRefinement{N,L,R,G1<:DyadicGrid{N},G2<:DyadicGrid{N}} <:
+       AbstractRefinement{N,L}
     grid1::G1
     grid2::G2
     location::L
 
-    function ConstantRefinement{N,L,R}(grid1::G1, grid2::G2,
-                                       location::L) where {N,L,R,G1,G2}
+    function ConstantRefinement{N,L,R}(
+        grid1::G1,
+        grid2::G2,
+        location::L,
+    ) where {N,L,R,G1,G2}
         return new{N,L,R,G1,G2}(grid1, grid2, location)
     end
 end
 
-function ConstantRefinement(grid1::DyadicGrid{N}, grid2::DyadicGrid{N};
-                            location::AbstractLocation = Center()) where {N}
+function ConstantRefinement(
+    grid1::DyadicGrid{N},
+    grid2::DyadicGrid{N};
+    location::AbstractLocation = Center(),
+) where {N}
     name = "ConstantRefinement"
     _require_center(location, name)
     r = _nesting(grid2, grid1, name, "grid2", "AverageCoarsening")
@@ -259,21 +295,29 @@ of linearity; conservation is unaffected.
 `grid2` must be finer than or equal to `grid1`, by a power-of-2 ratio, with coincident
 corners.
 """
-struct LinearRefinement{N,L,R,G1<:DyadicGrid{N},G2<:DyadicGrid{N},Lim} <: AbstractRefinement{N,L}
+struct LinearRefinement{N,L,R,G1<:DyadicGrid{N},G2<:DyadicGrid{N},Lim} <:
+       AbstractRefinement{N,L}
     grid1::G1
     grid2::G2
     location::L
     limiter::Lim
 
-    function LinearRefinement{N,L,R}(grid1::G1, grid2::G2, location::L,
-                                     limiter::Lim) where {N,L,R,G1,G2,Lim}
+    function LinearRefinement{N,L,R}(
+        grid1::G1,
+        grid2::G2,
+        location::L,
+        limiter::Lim,
+    ) where {N,L,R,G1,G2,Lim}
         return new{N,L,R,G1,G2,Lim}(grid1, grid2, location, limiter)
     end
 end
 
-function LinearRefinement(grid1::DyadicGrid{N}, grid2::DyadicGrid{N};
-                          limiter::Union{Nothing,AbstractLimiter} = nothing,
-                          location::AbstractLocation = Center()) where {N}
+function LinearRefinement(
+    grid1::DyadicGrid{N},
+    grid2::DyadicGrid{N};
+    limiter::Union{Nothing,AbstractLimiter} = nothing,
+    location::AbstractLocation = Center(),
+) where {N}
     name = "LinearRefinement"
     _require_center(location, name)
     r = _nesting(grid2, grid1, name, "grid2", "AverageCoarsening")
@@ -304,19 +348,28 @@ Which regridders are stored depends on the grid spacings, so the constructor's r
 cannot be inferred. Build it once, at setup, and store it in a parametric field; `regrid!`
 itself is type-stable.
 """
-struct BidirectionalRegridding{N,L,G1<:DyadicGrid{N},G2<:DyadicGrid{N},
-                               T1<:AbstractRegridding{N,L},T2<:AbstractRegridding{N,L}} <:
-       AbstractRegridding{N,L}
+struct BidirectionalRegridding{
+    N,
+    L,
+    G1<:DyadicGrid{N},
+    G2<:DyadicGrid{N},
+    T1<:AbstractRegridding{N,L},
+    T2<:AbstractRegridding{N,L},
+} <: AbstractRegridding{N,L}
     grid1::G1
     grid2::G2
     to1::T1
     to2::T2
 end
 
-function BidirectionalRegridding(grid1::DyadicGrid{N}, grid2::DyadicGrid{N};
-                                 refinement::Type{<:AbstractRefinement} = LinearRefinement,
-                                 weights = nothing, location::AbstractLocation = Center(),
-                                 refinement_kwargs...) where {N}
+function BidirectionalRegridding(
+    grid1::DyadicGrid{N},
+    grid2::DyadicGrid{N};
+    refinement::Type{<:AbstractRefinement} = LinearRefinement,
+    weights = nothing,
+    location::AbstractLocation = Center(),
+    refinement_kwargs...,
+) where {N}
     try
         to2 = _regridding(grid1, grid2; refinement, weights, location, refinement_kwargs...)
         to1 = _regridding(grid2, grid1; refinement, weights, location, refinement_kwargs...)
@@ -333,9 +386,16 @@ end
 The one-way regridder from `src_grid` to `dst_grid`: identity, coarsening or refinement,
 depending on the grids. Its return type depends on the grid values.
 """
-function _regridding(src_grid::DyadicGrid, dst_grid::DyadicGrid; refinement, weights,
-                     location, refinement_kwargs...)
-    _same_geometry(src_grid, dst_grid) && return IdentityRegridding(src_grid, dst_grid; location)
+function _regridding(
+    src_grid::DyadicGrid,
+    dst_grid::DyadicGrid;
+    refinement,
+    weights,
+    location,
+    refinement_kwargs...,
+)
+    _same_geometry(src_grid, dst_grid) &&
+        return IdentityRegridding(src_grid, dst_grid; location)
     if src_grid.spacing < dst_grid.spacing
         return AverageCoarsening(src_grid, dst_grid; weights, location)
     end
@@ -353,33 +413,53 @@ Validate that `coarse` is `fine` coarsened by a power-of-2 ratio `r` with coinci
 corners, and return `r`. `name`, `fine_label` (which argument should be the finer grid) and
 `alternative` phrase the errors, e.g. when the grids are passed the wrong way round.
 """
-function _nesting(fine::DyadicGrid{N}, coarse::DyadicGrid{N}, name, fine_label,
-                  alternative) where {N}
+function _nesting(
+    fine::DyadicGrid{N},
+    coarse::DyadicGrid{N},
+    name,
+    fine_label,
+    alternative,
+) where {N}
     atol = max(fine.atol, coarse.atol)
     ρ = coarse.spacing / fine.spacing
     n = maximum(size(fine))
     if ρ < 1 && !_same_coordinate(n * fine.spacing, n * coarse.spacing, atol)
-        throw(ArgumentError(
-            "$name expects $fine_label to be the finer grid, but its spacing is " *
-            "$(fine.spacing / coarse.spacing)× larger ($(fine.spacing) vs " *
-            "$(coarse.spacing)). Did you mean $alternative?"))
+        throw(
+            ArgumentError(
+                "$name expects $fine_label to be the finer grid, but its spacing is " *
+                "$(fine.spacing / coarse.spacing)× larger ($(fine.spacing) vs " *
+                "$(coarse.spacing)). Did you mean $alternative?",
+            ),
+        )
     end
     r = max(round(Int, ρ), 1)
     extent = coarse.spacing * maximum(size(coarse))
-    _same_coordinate(extent, r * fine.spacing * maximum(size(coarse)), atol) || throw(ArgumentError(
-        "$name: spacings $(fine.spacing) and $(coarse.spacing) are not related by an " *
-        "integer ratio (ratio $ρ)."))
-    ispow2(r) || throw(ArgumentError(
-        "$name: $(fine.spacing) → $(coarse.spacing) is a ratio of $r, not a power of 2."))
-    for d in 1:N
-        _same_coordinate(fine.origin[d], coarse.origin[d], atol) || throw(ArgumentError(
-            "$name: the grid corners do not coincide along axis $d " *
-            "($(fine.origin[d]) vs $(coarse.origin[d]))."))
+    _same_coordinate(extent, r * fine.spacing * maximum(size(coarse)), atol) || throw(
+        ArgumentError(
+            "$name: spacings $(fine.spacing) and $(coarse.spacing) are not related by an " *
+            "integer ratio (ratio $ρ).",
+        ),
+    )
+    ispow2(r) || throw(
+        ArgumentError(
+            "$name: $(fine.spacing) → $(coarse.spacing) is a ratio of $r, not a power of 2.",
+        ),
+    )
+    for d = 1:N
+        _same_coordinate(fine.origin[d], coarse.origin[d], atol) || throw(
+            ArgumentError(
+                "$name: the grid corners do not coincide along axis $d " *
+                "($(fine.origin[d]) vs $(coarse.origin[d])).",
+            ),
+        )
     end
-    size(fine) == size(coarse) .* r || throw(ArgumentError(
-        "$name: a $(join(size(coarse), "×")) grid refined $r× has " *
-        "$(join(size(coarse) .* r, "×")) cells, but the finer grid has " *
-        "$(join(size(fine), "×"))."))
+    size(fine) == size(coarse) .* r || throw(
+        ArgumentError(
+            "$name: a $(join(size(coarse), "×")) grid refined $r× has " *
+            "$(join(size(coarse) .* r, "×")) cells, but the finer grid has " *
+            "$(join(size(fine), "×")).",
+        ),
+    )
     return r
 end
 
@@ -412,7 +492,8 @@ ratio(rgd::BidirectionalRegridding) = ratio(rgd.to2)
 Whether `rgd` preserves the integral of the field. True for every regridder in KryosTools.
 """
 isconservative(::AbstractRegridding) = true
-isconservative(rgd::BidirectionalRegridding) = isconservative(rgd.to1) && isconservative(rgd.to2)
+isconservative(rgd::BidirectionalRegridding) =
+    isconservative(rgd.to1) && isconservative(rgd.to2)
 
 """
     islinear(rgd)
@@ -428,8 +509,18 @@ islinear(rgd::BidirectionalRegridding) = islinear(rgd.to1) && islinear(rgd.to2)
 
 function Base.show(io::IO, rgd::BidirectionalRegridding)
     g1, g2 = grids(rgd)
-    print(io, "BidirectionalRegridding(", join(size(g1), "×"), " ↔ ", join(size(g2), "×"),
-          ": to1 = ", nameof(typeof(rgd.to1)), ", to2 = ", nameof(typeof(rgd.to2)), ")")
+    print(
+        io,
+        "BidirectionalRegridding(",
+        join(size(g1), "×"),
+        " ↔ ",
+        join(size(g2), "×"),
+        ": to1 = ",
+        nameof(typeof(rgd.to1)),
+        ", to2 = ",
+        nameof(typeof(rgd.to2)),
+        ")",
+    )
 end
 
 function Base.show(io::IO, rgd::AbstractRegridding)
@@ -478,7 +569,7 @@ are `r` times larger than the coarse field.
 """
 @inline function _block_sum(term, (i,)::NTuple{1,Int}, ::Val{R}, acc) where {R}
     i0 = (i - 1) * R
-    for p in 1:R
+    for p = 1:R
         acc += term(i0 + p)
     end
     return acc
@@ -486,7 +577,7 @@ end
 
 @inline function _block_sum(term, (i, j)::NTuple{2,Int}, ::Val{R}, acc) where {R}
     i0, j0 = (i - 1) * R, (j - 1) * R
-    for q in 1:R, p in 1:R
+    for q = 1:R, p = 1:R
         acc += term(i0 + p, j0 + q)
     end
     return acc
@@ -494,7 +585,7 @@ end
 
 @inline function _block_sum(term, (i, j, k)::NTuple{3,Int}, ::Val{R}, acc) where {R}
     i0, j0, k0 = (i - 1) * R, (j - 1) * R, (k - 1) * R
-    for s in 1:R, q in 1:R, p in 1:R
+    for s = 1:R, q = 1:R, p = 1:R
         acc += term(i0 + p, j0 + q, k0 + s)
     end
     return acc
@@ -516,35 +607,51 @@ is the position of the fine cell within the block (from 1 to `r` along each axis
 written out for 1 to 3 dimensions so that their bounds are constants. Callers guarantee that
 `dst` is `r` times larger than the coarse field.
 """
-@inline function _block_fill!(dst::AbstractArray{<:Any,1}, fill, (i,)::NTuple{1,Int},
-                              ::Val{R}) where {R}
+@inline function _block_fill!(
+    dst::AbstractArray{<:Any,1},
+    fill,
+    (i,)::NTuple{1,Int},
+    ::Val{R},
+) where {R}
     i0 = (i - 1) * R
-    for p in 1:R
-        @inbounds dst[i0 + p] = fill(p)
+    for p = 1:R
+        @inbounds dst[i0+p] = fill(p)
     end
     return nothing
 end
 
-@inline function _block_fill!(dst::AbstractArray{<:Any,2}, fill, (i, j)::NTuple{2,Int},
-                              ::Val{R}) where {R}
+@inline function _block_fill!(
+    dst::AbstractArray{<:Any,2},
+    fill,
+    (i, j)::NTuple{2,Int},
+    ::Val{R},
+) where {R}
     i0, j0 = (i - 1) * R, (j - 1) * R
-    for q in 1:R, p in 1:R
-        @inbounds dst[i0 + p, j0 + q] = fill(p, q)
+    for q = 1:R, p = 1:R
+        @inbounds dst[i0+p, j0+q] = fill(p, q)
     end
     return nothing
 end
 
-@inline function _block_fill!(dst::AbstractArray{<:Any,3}, fill, (i, j, k)::NTuple{3,Int},
-                              ::Val{R}) where {R}
+@inline function _block_fill!(
+    dst::AbstractArray{<:Any,3},
+    fill,
+    (i, j, k)::NTuple{3,Int},
+    ::Val{R},
+) where {R}
     i0, j0, k0 = (i - 1) * R, (j - 1) * R, (k - 1) * R
-    for s in 1:R, q in 1:R, p in 1:R
-        @inbounds dst[i0 + p, j0 + q, k0 + s] = fill(p, q, s)
+    for s = 1:R, q = 1:R, p = 1:R
+        @inbounds dst[i0+p, j0+q, k0+s] = fill(p, q, s)
     end
     return nothing
 end
 
-@inline function _block_fill!(dst::AbstractArray{<:Any,N}, fill, I::NTuple{N,Int},
-                              ::Val{R}) where {N,R}
+@inline function _block_fill!(
+    dst::AbstractArray{<:Any,N},
+    fill,
+    I::NTuple{N,Int},
+    ::Val{R},
+) where {N,R}
     base = ntuple(d -> (I[d] - 1) * R, Val(N))
     for Δ in CartesianIndices(ntuple(_ -> R, Val(N)))
         p = Tuple(Δ)
@@ -564,10 +671,12 @@ struct _LinearFill{R,N,A}
     value::A
     slopes::NTuple{N,A}
 end
-_LinearFill{R}(value::A, slopes::NTuple{N,A}) where {R,N,A} = _LinearFill{R,N,A}(value, slopes)
+_LinearFill{R}(value::A, slopes::NTuple{N,A}) where {R,N,A} =
+    _LinearFill{R,N,A}(value, slopes)
 
 @inline function (f::_LinearFill{R,N,A})(p::Vararg{Int,N}) where {R,N,A}
-    return f.value + _tuplesum(ntuple(@inline(d -> f.slopes[d] * _child_offset(p[d], R, A)), Val(N)))
+    return f.value +
+           _tuplesum(ntuple(@inline(d -> f.slopes[d] * _child_offset(p[d], R, A)), Val(N)))
 end
 
 # Centre of child `p` of `r` relative to its parent's centre, in units of the parent's width.
@@ -591,8 +700,8 @@ the result masked), which is several times faster on the CPU and GPU-friendly.
     i = I[d]
     n = size(src, d)
     @inbounds here = A(src[I...])
-    @inbounds left = A(src[Base.setindex(I, max(i - 1, 1), d)...])
-    @inbounds right = A(src[Base.setindex(I, min(i + 1, n), d)...])
+    @inbounds left = A(src[Base.setindex(I, max(i-1, 1), d)...])
+    @inbounds right = A(src[Base.setindex(I, min(i+1, n), d)...])
     return ifelse(1 < i < n, _limited_slope(limiter, right - here, here - left), zero(A))
 end
 
@@ -632,15 +741,24 @@ end
 
 function _check_fields(dst, src, rgd)
     g1, g2 = grids(rgd)
-    size(src) == size(g1) || throw(DimensionMismatch(
-        "$(nameof(typeof(rgd))): the source field has size $(size(src)), but grid1 is " *
-        "$(join(size(g1), "×"))."))
-    size(dst) == size(g2) || throw(DimensionMismatch(
-        "$(nameof(typeof(rgd))): the destination field has size $(size(dst)), but grid2 " *
-        "is $(join(size(g2), "×"))."))
-    typeof(get_backend(dst)) == typeof(get_backend(src)) || throw(ArgumentError(
-        "$(nameof(typeof(rgd))): source and destination live on different backends " *
-        "($(typeof(get_backend(src))) and $(typeof(get_backend(dst))))."))
+    size(src) == size(g1) || throw(
+        DimensionMismatch(
+            "$(nameof(typeof(rgd))): the source field has size $(size(src)), but grid1 is " *
+            "$(join(size(g1), "×")).",
+        ),
+    )
+    size(dst) == size(g2) || throw(
+        DimensionMismatch(
+            "$(nameof(typeof(rgd))): the destination field has size $(size(dst)), but grid2 " *
+            "is $(join(size(g2), "×")).",
+        ),
+    )
+    typeof(get_backend(dst)) == typeof(get_backend(src)) || throw(
+        ArgumentError(
+            "$(nameof(typeof(rgd))): source and destination live on different backends " *
+            "($(typeof(get_backend(src))) and $(typeof(get_backend(dst)))).",
+        ),
+    )
     return nothing
 end
 
@@ -656,22 +774,42 @@ function regrid!(dst::AbstractArray, src::AbstractArray, rgd::AverageCoarsening)
     return dst
 end
 
-function _average_coarsening!(backend, dst, src, rgd::AverageCoarsening{N,L,R},
-                              ::Nothing) where {N,L,R}
+function _average_coarsening!(
+    backend,
+    dst,
+    src,
+    rgd::AverageCoarsening{N,L,R},
+    ::Nothing,
+) where {N,L,R}
     inv_volume = one(accumtype(eltype(dst))) / R^N
     kernel! = _average_coarsening_kernel!(backend)
     kernel!(dst, src, Val(R), inv_volume; ndrange = size(dst))
     return nothing
 end
 
-function _average_coarsening!(backend, dst, src, rgd::AverageCoarsening{N,L,R},
-                              weights::AbstractArray) where {N,L,R}
-    typeof(get_backend(weights)) == typeof(backend) || throw(ArgumentError(
-        "AverageCoarsening: the weights live on $(typeof(get_backend(weights))), but the " *
-        "fields on $(typeof(backend))."))
+function _average_coarsening!(
+    backend,
+    dst,
+    src,
+    rgd::AverageCoarsening{N,L,R},
+    weights::AbstractArray,
+) where {N,L,R}
+    typeof(get_backend(weights)) == typeof(backend) || throw(
+        ArgumentError(
+            "AverageCoarsening: the weights live on $(typeof(get_backend(weights))), but the " *
+            "fields on $(typeof(backend)).",
+        ),
+    )
     kernel! = _weighted_coarsening_kernel!(backend)
-    kernel!(dst, src, weights, rgd.inv_weightsum, Val(R), zero(accumtype(eltype(dst)));
-            ndrange = size(dst))
+    kernel!(
+        dst,
+        src,
+        weights,
+        rgd.inv_weightsum,
+        Val(R),
+        zero(accumtype(eltype(dst)));
+        ndrange = size(dst),
+    )
     return nothing
 end
 
@@ -680,28 +818,46 @@ end
     @inbounds dst[I...] = _block_sum(_Values(src), I, ratio, zero(inv_volume)) * inv_volume
 end
 
-@kernel function _weighted_coarsening_kernel!(dst, @Const(src), @Const(weights),
-                                              @Const(inv_weightsum), ratio, acc)
+@kernel function _weighted_coarsening_kernel!(
+    dst,
+    @Const(src),
+    @Const(weights),
+    @Const(inv_weightsum),
+    ratio,
+    acc,
+)
     I = @index(Global, NTuple)
     A = typeof(acc)
     total = _block_sum(_WeightedValues{A}(src, weights), I, ratio, acc)
     @inbounds dst[I...] = total * A(inv_weightsum[I...])
 end
 
-function regrid!(dst::AbstractArray, src::AbstractArray,
-                 rgd::ConstantRefinement{N,L,R}) where {N,L,R}
+function regrid!(
+    dst::AbstractArray,
+    src::AbstractArray,
+    rgd::ConstantRefinement{N,L,R},
+) where {N,L,R}
     _check_fields(dst, src, rgd)
     kernel! = _constant_refinement_kernel!(get_backend(dst))
     kernel!(dst, src, Val(R); ndrange = size(src))
     return dst
 end
 
-function regrid!(dst::AbstractArray, src::AbstractArray,
-                 rgd::LinearRefinement{N,L,R}) where {N,L,R}
+function regrid!(
+    dst::AbstractArray,
+    src::AbstractArray,
+    rgd::LinearRefinement{N,L,R},
+) where {N,L,R}
     _check_fields(dst, src, rgd)
     kernel! = _linear_refinement_kernel!(get_backend(dst))
-    kernel!(dst, src, Val(R), rgd.limiter, zero(accumtype(eltype(dst)));
-            ndrange = size(src))
+    kernel!(
+        dst,
+        src,
+        Val(R),
+        rgd.limiter,
+        zero(accumtype(eltype(dst)));
+        ndrange = size(src),
+    )
     return dst
 end
 
@@ -713,8 +869,13 @@ end
     @inbounds _block_fill!(dst, _ConstantFill(src[I...]), I, ratio)
 end
 
-@kernel function _linear_refinement_kernel!(dst, @Const(src), ratio::Val{R}, limiter,
-                                            acc) where {R}
+@kernel function _linear_refinement_kernel!(
+    dst,
+    @Const(src),
+    ratio::Val{R},
+    limiter,
+    acc,
+) where {R}
     I = @index(Global, NTuple)
     A = typeof(acc)
     @inbounds value = A(src[I...])
@@ -739,9 +900,11 @@ end
 
 function _direction_mismatch(dst_size, src_size, rgd)
     n1, n2 = join(size(rgd.grid1), "×"), join(size(rgd.grid2), "×")
-    fields = dst_size === nothing ? "a source field of size $src_size" :
-             "fields of size $dst_size (destination) and $src_size (source)"
+    fields =
+        dst_size === nothing ? "a source field of size $src_size" :
+        "fields of size $dst_size (destination) and $src_size (source)"
     return DimensionMismatch(
         "BidirectionalRegridding between $n1 and $n2 cells cannot regrid $fields: " *
-        "one field must be on each grid.")
+        "one field must be on each grid.",
+    )
 end
