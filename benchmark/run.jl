@@ -8,8 +8,8 @@ Environment overrides for smoke tests: `KRYOSTOOLS_BENCH_RESULTS` (results file)
 `KRYOSTOOLS_BENCH_SECONDS` (time budget per case, default 1).
 
 The run is refused on a dirty git tree unless `--allow-dirty` is given, in which case its
-rows are flagged `dirty = true`. Changes under `benchmark/results/` do not count as dirty,
-so uncommitted results do not block the next run.
+rows are flagged `dirty = true`. Only tracked files count, and changes under
+`benchmark/results/` do not, so uncommitted results do not block the next run.
 
 At the end, the speedups over Interpolations.jl are printed (see `compare.jl`).
 
@@ -77,7 +77,10 @@ function driver(args)
 
     root = dirname(@__DIR__)
     git(cmd...) = readchomp(Cmd(`git -C $root $cmd`))
-    dirty = !isempty(git("status", "--porcelain", "--", ".", ":!benchmark/results"))
+    # Only tracked files count: untracked folders (e.g. a nested roadmap repository) cannot
+    # affect the code being measured.
+    dirty = !isempty(git("status", "--porcelain", "--untracked-files=no", "--", ".",
+                         ":!benchmark/results"))
     if dirty && !allow_dirty
         error("The working tree has uncommitted changes. Commit them first, or pass " *
               "--allow-dirty to record flagged results anyway.")
