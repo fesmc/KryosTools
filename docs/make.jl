@@ -14,7 +14,9 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Dyadic regridding" => "regridding.md",
     ],
+    checkdocs=:exports,
 )
 
 deploydocs(;
