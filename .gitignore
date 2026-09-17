@@ -7,3 +7,4 @@
 /test/gpu/Manifest*.toml
 /benchmark/Manifest*.toml
 /benchmark/results/*.png
+/benchmark/reactant/Manifest*.toml
