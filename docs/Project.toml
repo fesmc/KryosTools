@@ -4,3 +4,6 @@ KryosTools = "bca65173-ccd7-4aaf-bca7-eb35c7daa15d"
 
 [sources]
 KryosTools = {path = ".."}
+
+[compat]
+Documenter = "1.19.0"
